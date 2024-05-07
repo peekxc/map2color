@@ -172,6 +172,7 @@ def color_mapper(color_pal: str = 'viridis', lb: Optional[float] = 0.0, ub: Opti
 			raise ValueError(f"Unknown interpolation strategy '{strategy}' given.")
 	return _color_map
 
+## Assumes the data have been clipped
 def _transform_lerp(data: np.ndarray, palette: Sequence, bins: Sequence = None):
 	"""Linearly interpolates a given numeric data array onto a given palette in RGB(A) space using the supplied bins"""
 	bins = np.linspace(np.min(data), np.max(data), len(palette)) if bins is None else bins
@@ -189,7 +190,7 @@ def _transform_lerp(data: np.ndarray, palette: Sequence, bins: Sequence = None):
 def _transform_bin(data: np.ndarray, palette: Sequence, bins: Sequence):
 	"""Bins a given numeric data array onto a given palette in RGB(A) space using the supplied bins"""
 	bins = np.linspace(np.min(data), np.max(data), len(palette)-1) if bins is None else bins
-	assert len(bins) == (len(palette) - 1), "The number of bins should match the size of the supplied color palette"
+	assert len(bins) == (len(palette) - 1), f"The number of bins ({len(bins)}) should match the size of the supplied color palette ({len(palette)}) - 1"
 	ind = np.digitize(data, bins=bins)
 	return np.array(palette)[ind]
 
@@ -208,13 +209,13 @@ def _lerp_palette(palette: Sequence, size: int) -> Sequence:
 	return rgb2hex(x_rgba)
 
 # https://docs.bokeh.org/en/3.0.0/docs/examples/basic/data/color_mappers.html
-def map2color(
+def map2hex(
 	data: Iterable = None, 
 	palette: Union[Sequence, str] = 'viridis', 
 	low: Optional = None, 
 	high: Optional = None,
 	nbins: int = 256,
-	output: str = "hex",
+	interp: str = "bin",
 	**kwargs
 ):
 	"""Maps numeric values to colors from a given color palette or color range.
@@ -225,9 +226,12 @@ def map2color(
 		low = lower bound to clip data values below.
 		high = upper bound to clip data values above.
 		nbins = number of distinct colors to partition the given palette into. 
+		interp = interpolation strategy; either 'bin' or 'lerp' (see details).
 
 	Returns: 
-		ndarray of colors, given as hexadecimal strings or rgb(a) values 
+		ndarray of colors, given as hexadecimal strings
+
+	The interpolation strategy determines how the RGB(a) space is interpolated. 
 	"""
 	## Clip, digitize (bin), and perform the index mapping
 	if isinstance(palette, str):
@@ -244,12 +248,17 @@ def map2color(
 	lb = np.min(data) if low is None else low
 	ub = np.max(data) if high is None else high
 	data = np.clip(data, a_min=lb, a_max=ub)
-	bin_centers = np.linspace(lb,ub,nbins+1,endpoint=True)[1:-1]
-	eps = 10*np.finfo(data.dtype).eps
-	breaks = np.append(bin_centers, [ub + eps])
-	colors = _transform_bin(data, palette=palette, bins=breaks)
+	
+	## Apply the given interpolation strategy
+	if interp == "bin":
+		bin_centers = np.linspace(lb,ub,nbins+1,endpoint=True)[1:-1]
+		colors = _transform_bin(data, palette=palette, bins=bin_centers)
+	elif interp == "lerp":
+		bin_centers = np.linspace(lb,ub,nbins+1,endpoint=True)[1:-1]
+		colors = _transform_lerp(data, palette=palette, bins=bin_centers)
+	else: 
+		raise ValueError(f"Invalid interpolation strategy supplied '{str(interp)}'; should be one of 'bin' or 'lerp'.")
 
-	## Return 
 	return colors
 	
 	## TODO: 
@@ -261,3 +270,27 @@ def map2color(
 
 
 
+def map2rgb(
+	data: Iterable = None, 
+	palette: Union[Sequence, str] = 'viridis', 
+	low: Optional = None, 
+	high: Optional = None,
+	nbins: int = 256,
+	interp: str = "bin",
+	**kwargs
+):
+	"""Maps numeric values to colors from a given color palette or color range.
+	
+	Parameters: 
+		data = numeric values to map to colors.
+		palette = color palette name or a sequence of (hex) RGB colors.
+		low = lower bound to clip data values below.
+		high = upper bound to clip data values above.
+		nbins = number of distinct colors to partition the given palette into. 
+		interp = interpolation strategy; either 'bin' or 'lerp' (see details).
+
+	Returns: 
+		ndarray of colors, given as rgb(a) values 
+	"""
+	colors_hex = map2rgb(data, palette, low, high, nbins, interp, **kwargs)
+	return hex2rgb(colors_hex)

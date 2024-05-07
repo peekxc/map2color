@@ -7,21 +7,29 @@ from bokeh.palettes import Turbo256
 output_notebook()
 
 
-from map2color.color import map2color, hex2rgb, rgb2hex
-
-
-x = np.random.uniform(size=5, low=-1, high=1)
-y = np.random.normal(size=5)
+from map2color.color import *
+x = np.random.uniform(size=1250, low=-1, high=1)
+y = np.random.normal(size=1250)
 X = np.c_[x,y]
 
 ## Default behavior
 p = figure(width=450, height=300)
-p.scatter(*X.T,color=map2color(x, palette = "viridis"),size=4)
+p.scatter(*X.T,color=map2color(x, palette = "viridis", interp='bin'),size=4)
+show(p)
+
+## Interpolation strategy
+p = figure(width=450, height=300)
+p.scatter(*X.T,color=map2color(x, palette = "viridis", interp='lerp'),size=4)
 show(p)
 
 ## Low number of bins 
 p = figure(width=450, height=300)
 p.scatter(*X.T,color=map2color(x, palette = "viridis", nbins=5),size=4)
+show(p)
+
+
+p = figure(width=450, height=300)
+p.scatter(*X.T,color=map2color(x, palette = "viridis", nbins=5, interp='lerp'),size=4)
 show(p)
 
 
