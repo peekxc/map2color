@@ -2,6 +2,8 @@
 
 TODO
 
+# Installation 
+
 ```{python}
-python -m build --no-isolation --skip-dependency-check
+pip install git+https://github.com/peekxc/map2color.git
 ```
