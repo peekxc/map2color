@@ -14,22 +14,21 @@ X = np.c_[x,y]
 
 ## Default behavior
 p = figure(width=450, height=300)
-p.scatter(*X.T,color=map2color(x, palette = "viridis", interp='bin'),size=4)
+p.scatter(*X.T,color=map2hex(x, palette = "viridis", interp='bin'),size=4)
 show(p)
 
 ## Interpolation strategy
 p = figure(width=450, height=300)
-p.scatter(*X.T,color=map2color(x, palette = "viridis", interp='lerp'),size=4)
+p.scatter(*X.T,color=map2hex(x, palette = "viridis", interp='lerp'),size=4)
 show(p)
 
 ## Low number of bins 
 p = figure(width=450, height=300)
-p.scatter(*X.T,color=map2color(x, palette = "viridis", nbins=5),size=4)
+p.scatter(*X.T,color=map2hex(x, palette = "viridis", nbins=5),size=4)
 show(p)
 
-
 p = figure(width=450, height=300)
-p.scatter(*X.T,color=map2color(x, palette = "viridis", nbins=5, interp='lerp'),size=4)
+p.scatter(*X.T,color=map2hex(x, palette = "viridis", nbins=2, interp='lerp'),size=4)
 show(p)
 
 

@@ -134,13 +134,14 @@ def histeq(data: np.ndarray, bins: int = 256):
 #   cdf[0] = -1.0
 
 def digitize_modulo(x: np.ndarray, bins: np.ndarray):
-	"""Bins values in 'x' into bins by calling digitize, but also returns position information about bins""" 
+	"""Bins values in 'x' into bins by calling digitize, returning both the bin index and relative position within the bin""" 
+	nbins = len(bins)
 	ind = np.digitize(x, bins=bins, right=False)
-	pred_value = bins[np.clip(ind - 1, 0, len(bins)-1)]
-	succ_value = bins[np.clip(ind, 0, len(bins)-1)]
+	pred_value = bins[np.clip(ind - 1, 0, nbins-1)]
+	succ_value = bins[np.clip(ind, 0, nbins-1)]
 	bin_width = (succ_value - pred_value)
 	denom = np.reciprocal(np.where(bin_width > 0, bin_width, 1.0))
-	return ind, denom*(x - pred_value)
+	return ind, denom * (x - pred_value)
 
 def color_mapper(color_pal: str = 'viridis', lb: Optional[float] = 0.0, ub: Optional[float] = 1.0) -> Callable:
 	import bokeh
@@ -175,8 +176,8 @@ def color_mapper(color_pal: str = 'viridis', lb: Optional[float] = 0.0, ub: Opti
 ## Assumes the data have been clipped
 def _transform_lerp(data: np.ndarray, palette: Sequence, bins: Sequence = None):
 	"""Linearly interpolates a given numeric data array onto a given palette in RGB(A) space using the supplied bins"""
-	bins = np.linspace(np.min(data), np.max(data), len(palette)) if bins is None else bins
-	assert len(bins) == len(palette), "The number of bins should match the size of the supplied color palette"
+	bins = np.linspace(np.min(data), np.max(data), len(palette)-1) if bins is None else bins
+	assert len(bins) == (len(palette) - 1), f"The number of bins ({len(bins)}) should match the size of the supplied color palette ({len(palette)}) - 1"
 	N_COLORS = len(palette) 
 	rgb_palette = hex2rgb(palette)
 	ind, rel = digitize_modulo(data, bins)
@@ -184,6 +185,7 @@ def _transform_lerp(data: np.ndarray, palette: Sequence, bins: Sequence = None):
 	succ_values = rgb_palette[np.where(ind < (N_COLORS-1), ind+1, ind)]
 	x_unit = rgb_palette[ind] + rel[:,np.newaxis] * (succ_values - rgb_palette[ind])
 	x_rgba = np.clip(np.round(x_unit * 255).astype(np.uint8), 0, 255)
+	print(f"n unique: {len(np.unique(x_rgba, axis=0))}")
 	return rgb2hex(x_rgba)
 
 ## Assumes the data have been clipped
@@ -200,7 +202,7 @@ def _lerp_palette(palette: Sequence, size: int) -> Sequence:
 	N_COLORS = len(palette) 
 	rgb_palette = hex2rgb(palette) / 255
 	key_points = np.linspace(0.0, 1.0, size)
-	pal_points = np.linspace(0.0, 1.0, len(palette))
+	pal_points = np.linspace(0.0, 1.0, N_COLORS)
 	ind, rel = digitize_modulo(key_points, pal_points)
 	ind = np.clip(ind-1, 0, N_COLORS-1)
 	succ_values = rgb_palette[np.where(ind < (N_COLORS-1), ind+1, ind)]
@@ -251,9 +253,11 @@ def map2hex(
 	
 	## Apply the given interpolation strategy
 	if interp == "bin":
+		print('bin')
 		bin_centers = np.linspace(lb,ub,nbins+1,endpoint=True)[1:-1]
 		colors = _transform_bin(data, palette=palette, bins=bin_centers)
 	elif interp == "lerp":
+		print('bin')
 		bin_centers = np.linspace(lb,ub,nbins+1,endpoint=True)[1:-1]
 		colors = _transform_lerp(data, palette=palette, bins=bin_centers)
 	else: 
@@ -261,15 +265,6 @@ def map2hex(
 
 	return colors
 	
-	## TODO: 
-	# bins = np.linspace(lb, ub, len(palette))
-	
-	# ind = np.digitize(data, bins=np.linspace(lb, ub, len(palette))) - 1
-	# assert np.min(ind) >= 0 and np.max(ind) < len(palette), "Mapping failed"
-	# return palette[ind]
-
-
-
 def map2rgb(
 	data: Iterable = None, 
 	palette: Union[Sequence, str] = 'viridis', 
@@ -292,5 +287,5 @@ def map2rgb(
 	Returns: 
 		ndarray of colors, given as rgb(a) values 
 	"""
-	colors_hex = map2rgb(data, palette, low, high, nbins, interp, **kwargs)
+	colors_hex = map2hex(data, palette, low, high, nbins, interp, **kwargs)
 	return hex2rgb(colors_hex)
