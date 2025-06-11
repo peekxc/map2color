@@ -1,107 +1,172 @@
+import re
+from difflib import get_close_matches
+from typing import Callable, Container, Iterable, Iterator, Optional, Sequence, Union
+from functools import singledispatch
 
 import numpy as np
-from typing import Union, Iterable, Optional, Callable, Sequence
-from difflib import get_close_matches
-import re
-from .color_constants import COLORS
+from coloraide import Color, color
 
-def ensure(expr_res: bool, message: str):
-	if not expr_res: 
-		raise ValueError(message)
+# from .color_constants import COLORS
+from numpy.typing import ArrayLike
 
-def is_hex_seq(S) -> bool:
-	S = np.array(S)
-	all_correct_len = np.all([len(s) in [6,7,8,9] for s in S])
-	if not all_correct_len: 
-		return False 
-	else: 
-		hex_str = ''.join(S).replace("#",'').lower()
-		all_hex_chars = all((c in 'abcdef0123456789' for c in hex_str))
-		return all_hex_chars
+from bokeh.palettes import all_palettes
 
-def is_rgb_seq(S) -> bool: 
-	S = np.atleast_2d(S)
-	valid_shape = S.shape[1] in [3,4]
-	if not valid_shape: 
-		return False 
-	else: 
-		valid_values = S.dtype == np.uint8 or (np.all(S.flatten() < 256) and np.all(S.flatten() >= 0))
-		return valid_values
+ALL_PALETTES = {k.lower(): v for k, v in all_palettes.items()}
+HEX_DIGITS = np.array(["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "A", "B", "C", "D", "E", "F"], dtype="<U1")
 
-class BokehColorPalette():
-	def __init__(self):
-		from bokeh.palettes import all_palettes
-		self.palettes = { k.lower() : v for k,v in all_palettes.items() }
 
-	def lookup(self, color_pal: str):
+# background: linear-gradient(90deg, #3f87a6, #ebf8e1, #f69d3c);
+def colors_html_box(colors: Iterable[str], interpolate: bool = False) -> str:
+	"""Generates an HTML box for a sequence of colors using CSS."""
+
+	def _gen_box(width: int, height: int, background: str) -> str:
+		return f"""<div style="
+				width: {width}px;
+				height: {height}px;
+				background: {background};
+				border: 1px solid #ccc;
+				margin: 0;">
+		</div>
+	"""
+
+	if interpolate:
+		background = f"linear-gradient(90deg, {','.join(colors)})"
+		return _gen_box(512, 50, background)
+	else:
+		box_width = 512 // (len(colors) + 5)
+		boxes = "".join([_gen_box(box_width, 50, color) for color in colors])
+		return f"""<div style="display: flex; flex-direction: row; gap: 5px;">{boxes}</div>"""
+
+
+class ColorPalette:
+	"""Color palette."""
+
+	def __init__(self, name: str, colors: Sequence | None = None, categorical: bool | None = None):
+		self.name = name
+		self.colors = np.array(self.lookup(name)) if colors is None else np.asarray(colors)
+		## TODO: input validation
+		self.categorical = len(self.colors) >= 12 if categorical is None else bool(categorical)
+
+	@staticmethod
+	def lookup(name: str, exact: bool = False):
 		# turbo = bokeh.palettes.all_palettes["Turbo"][256]
-		color_pal = color_pal.lower()
-		if color_pal in self.palettes:
-			base_palette = self.palettes[color_pal]
+		color_pal = name.lower()
+		if color_pal in ALL_PALETTES:
+			base_palette = ALL_PALETTES[color_pal]
 			pal_sz = list(base_palette.keys())[-1]
 		else:
 			matches = re.search(r"([a-zA-Z]+)(\d*)", color_pal)
 			basename, pal_sz = matches.group(1), matches.group(2)
-			assert basename in self.palettes, f"Unable to find color palette '{basename}'"
-			base_palette = self.palettes[basename]
+			assert basename in ALL_PALETTES, f"Unable to find color palette '{basename}'"
+			base_palette = ALL_PALETTES[basename]
 		return base_palette[pal_sz] if pal_sz in base_palette else base_palette[list(base_palette.keys())[-1]]
 
+	def bin(self, x: ArrayLike, low: float | None = None, high: float | None = None, nbins: int | None = None):
+		"""Bins data values into colors via a uniform partitioning of the color palette."""
+		N = len(self.colors)
+		low = np.min(x) if low is None else low
+		high = np.max(x) if high is None else high
+		nbins = N if nbins is None else int(nbins) + 1
+		bins = np.linspace(low, high, int(nbins))
+		pal = self.colors if nbins >= N else self.colors[np.arange(0, N, step=N // nbins)]
+		return pal[np.minimum(np.digitize(x, bins=bins), nbins - 1)]
+
+	def interp(self, x: ArrayLike, bins: np.ndarray | None = None):
+		"""Linearly interpolates given data values in RGB(A) space."""
+		rgb_colors = hex2rgb(self.colors).astype(np.float32)  # need float for interp.
+		bins = np.linspace(np.min(x), np.max(x), len(self.colors)) if bins is None else np.asarray(bins)
+		ind = np.clip(np.digitize(x, bins) - 1, 0, len(bins) - 2)
+		r = (x - bins[ind]) / (bins[ind + 1] - bins[ind])
+		out_rgb = rgb_colors[ind] + (rgb_colors[ind + 1] - rgb_colors[ind]) * r[:, None]
+		return rgb2hex(np.round(out_rgb).astype(np.uint8))
+
 	def __repr__(self) -> str:
-		return f"Palettes: {', '.join(self.palettes.keys())}"
+		return f"{self.name} color palette"
 
-## RGB(A) here is defined as an n x (3|4) array of type np.uint8 
-def rgb2hex(c: np.ndarray):
-	''' [255,255,255] -> "#FFFFFF" '''
-	c = c if isinstance(c, np.ndarray) else np.atleast_2d([c])
-	c = c.astype(np.uint8)
-	assert c.shape[1] in [3,4], "Color array must be given as rgb or rgba"
-	rgb_str = '#%02x%02x%02x' if c.shape[1] == 3 else '#%02x%02x%02x%02x'
-	return np.array([rgb_str % (r,g,b) for r,g,b in c])
+	def _repr_html_(self) -> str:
+		# len(self.colors) > 12
+		return colors_html_box(self.colors, interpolate=self.categorical)
 
-	# c_str = np.array2string(c, formatter={'int_kind' : lambda x: "%.2x" % x }, separator='')
-	# c_hex = np.char.add('#', np.array(c_str.replace('[','').replace(']','').replace('\n','').split(' ')))
-	# return np.take(c_hex, 0) if len(c_hex) == 1 else c_hex
+	# def __iter__(self) -> Iterator[str]:
+	# 	return iter(self.colors)
 
-## Largely from: https://bsouthga.dev/posts/color-gradients-with-python
-def color2hex(colors: Iterable) -> np.ndarray:
-	''' Given the name of color or an iterable of color names, returns the closest corresponding hexadecimal color representation '''
-	if isinstance(colors, str):
-		colors = colors.lower()
-		if colors in COLORS:
-			return COLORS[colors]
-		elif is_hex_seq([colors]):
-			return colors
-		else: 
-			# import editdistance
-			keys = list(COLORS.keys())
-			closest_color = get_close_matches(colors, keys, n = 1, cutoff = 0.0)
-			return COLORS[closest_color]
-			# raise ValueError("Invalid input detected")
-	else:
-		if is_hex_seq(colors): 
-			return colors 
-		else:
-			return np.array([color2hex(c) for c in colors])
 
-def hex2rgb(colors: Union[Iterable, str]):
-	''' "#FFFFFF" -> [255,255,255] '''
-	if isinstance(colors, str): # int(hex_str[i:i+2], 16) for i in range(1,6,2)
-		hex_str = colors[1:] if colors[0] == "#" else colors
-		return np.frombuffer(bytes.fromhex(hex_str), dtype=np.uint8)
-	else:
-		# return np.array([hex2rgb(h) for h in hex_str], dtype=np.uint8)
-		d = (len(colors[0]) - int(colors[0][0] == '#')) // 2
-		n = len(colors)
-		return np.frombuffer(bytes.fromhex(''.join(colors).replace('#','')), dtype=np.uint8).reshape((n, d))
+## RGB(A) here is defined as an n x (3|4) array of type np.uint8
+def rgb2hex(colors: ArrayLike, prefix: str = "#") -> np.ndarray[str]:
+	"""Converts RGB(A) arrays to hexadecimal strings with a chosen prefix.
+
+	This function efficienly converts any array of RGB or RGBA colors, given as
+	an n x 3 or n x 4 array of integers, into a flat array of hexadecimal string,
+	encoded as fixed-width Unicode strings.
+
+	Parameters:
+		colors: n x (3|4) array of integers representing rgb(a) colors.
+		prefix: preferred prefix for the output hexadecimal strings.
+
+	Returns:
+		array of hexadecimal strings.
+
+	Examples:
+		```python
+		rgb2hex(np.array([[255,255,255]]))
+		# array(['#FFFFFF'], dtype='<U7')
+
+		rgb2hex(np.array([[255,255,255,100]]))
+		# array(['#FFFFFF64'], dtype='<U9')
+		```
+
+	See Also:
+		- `hex2rgb`, `map2hex`
+	"""
+	colors = colors if isinstance(colors, np.ndarray) else np.atleast_2d([colors])
+	assert colors.shape[1] in {3, 4}, "Color array must be given as rgb or rgba"
+	q1, r1 = np.divmod(colors, 16)
+	q2, r2 = np.divmod(q1, 16)
+	CR = HEX_DIGITS[r2.astype(np.int_)] + HEX_DIGITS[r1.astype(np.int_)]
+	out = np.strings.add(prefix, CR[:, 0])
+	for j in range(1, CR.shape[1]):
+		out = np.strings.add(out, CR[:, j])
+	return out
+
+
+@singledispatch
+def hex2rgb(colors: Union[str, np.ndarray, list], prefix: str = "#"):
+	"""Converts hexadecimal strings to RGB arrays, i.e. "#FFFFFF" -> [255,255,255].
+
+	Parameters:
+		colors: hexadecimal-strings to convert to RGB(A).
+		prefix: the prefix used to denote the strings in `colors` are hex. Defaults to '#'.
+	"""
+	...
+
+
+@hex2rgb.register
+def _(colors: str, prefix: str = "#"):
+	return np.frombuffer(bytes.fromhex(colors.replace(prefix, "")), dtype=np.uint8)
+
+
+@hex2rgb.register
+def _(colors: np.ndarray, prefix: str = "#"):
+	colors_hex = np.strings.replace(colors, prefix, "")
+	colors_int = np.frombuffer(bytes.fromhex("".join(colors_hex)), dtype=np.uint8)
+	return colors_int.reshape((len(colors_hex), len(colors_hex[0]) // 2))
+
+
+@hex2rgb.register
+def _(colors: list, prefix: str = "#"):
+	colors_hex = np.strings.replace(colors, prefix, "")
+	colors_int = np.frombuffer(bytes.fromhex("".join(colors_hex)), dtype=np.uint8)
+	return colors_int.reshape((len(colors_hex), len(colors_hex[0]) // 2))
+
 
 ## TODO: implement plots from https://docs.bokeh.org/en/3.0.0/docs/examples/basic/data/color_mappers.html
 ## and equalization tips from https://scikit-image.org/docs/stable/auto_examples/color_exposure/plot_equalize.html
 ## From http://www.janeriksolem.net/histogram-equalization-with-python-and.html
-def histeq(data: np.ndarray, bins: int = 256):
+def histeq(data: ArrayLike, bins: int = 256):
 	x = np.array(data)
 	hist, bin_edges = np.histogram(x.flatten(), bins, density=True)
-	cdf = hist.cumsum() # cumulative distribution function
-	cdf = bins * cdf / cdf[-1] # normalize
+	cdf = hist.cumsum()  # cumulative distribution function
+	cdf = bins * cdf / cdf[-1]  # normalize
 
 	# use linear interpolation of cdf to find new pixel values
 	data_equalized = np.interp(x.flatten(), bin_edges[:-1], cdf)
@@ -133,159 +198,70 @@ def histeq(data: np.ndarray, bins: int = 256):
 #   cdf = cdf - low / diff
 #   cdf[0] = -1.0
 
-def digitize_modulo(x: np.ndarray, bins: np.ndarray):
-	"""Bins values in 'x' into bins by calling digitize, returning both the bin index and relative position within the bin""" 
-	nbins = len(bins)
-	ind = np.digitize(x, bins=bins, right=False)
-	pred_value = bins[np.clip(ind - 1, 0, nbins-1)]
-	succ_value = bins[np.clip(ind, 0, nbins-1)]
-	bin_width = (succ_value - pred_value)
-	denom = np.reciprocal(np.where(bin_width > 0, bin_width, 1.0))
-	return ind, denom * (x - pred_value)
 
-def color_mapper(color_pal: str = 'viridis', lb: Optional[float] = 0.0, ub: Optional[float] = 1.0) -> Callable:
-	import bokeh
-	ensure(isinstance(color_pal, str), "Must be string input")
-	color_pal = color_pal.lower()
-	bokeh_palettes = { p.lower() : p for p in dir(bokeh.palettes) if p[0] != "_" }
-	ensure(isinstance(color_pal, str), f"Unknown color palette '{color_pal}'")
-	
-	## Color palette should be end up as a numpy array of hex strings; if function, get 255 colors and convert
-	COLOR_PAL = getattr(bokeh.palettes, bokeh_palettes[color_pal.lower()])
-	N_COLORS = len(COLOR_PAL)
-	VALUE_BINS = np.linspace(lb, ub, N_COLORS)
+# ## TODO: do we make a color mapper? The package was founded because we want to replace them, essentially.
+# ## See: https://matplotlib.org/stable/api/_as_gen/matplotlib.colors.Colormap.html#matplotlib.colors.Colormap
+# ## Also:https://docs.bokeh.org/en/3.0.0/docs/examples/basic/data/color_mappers.html
+# # def color_mapper(color_pal: str = "viridis", lb: Optional[float] = 0.0, ub: Optional[float] = 1.0) -> Callable:
 
-	## 
-	def _color_map(x: Iterable, output: str = ["rgba", "hex"], strategy: str = ["bin", "lerp"]) -> np.ndarray:
-		if strategy == ["bin", "lerp"] or strategy == "bin":
-			ind = np.digitize(np.clip(x, a_min=lb, a_max=ub), bins=VALUE_BINS)
-			ind = np.clip(ind, 0, N_COLORS-1) 	## bound from above and below
-			return COLOR_PAL[ind] if output == "hex" else hex2rgb(COLOR_PAL[ind])
-		elif strategy == "lerp":
-			color_values = np.c_[hex2rgb(COLOR_PAL)/255.0, np.ones(255)]
-			ind, rel = digitize_modulo(np.clip(x, a_min=lb, a_max=ub), VALUE_BINS)
-			ind = np.clip(ind, 0, N_COLORS-1)
-			succ_values = color_values[np.where(ind < (N_COLORS-1), ind+1, ind)]
-			x_unit = color_values[ind] + rel[:,np.newaxis] * (succ_values - color_values[ind])
-			x_rgba = np.clip(np.round(x_unit * 255).astype(np.uint16), 0, 255)
-			return rgb2hex(x_rgba) if output == "hex" else x_rgba
-		else: 
-			raise ValueError(f"Unknown interpolation strategy '{strategy}' given.")
-	return _color_map
-
-## Assumes the data have been clipped
-def _transform_lerp(data: np.ndarray, palette: Sequence, bins: Sequence = None):
-	"""Linearly interpolates a given numeric data array onto a given palette in RGB(A) space using the supplied bins"""
-	bins = np.linspace(np.min(data), np.max(data), len(palette)-1) if bins is None else bins
-	assert len(bins) == (len(palette) - 1), f"The number of bins ({len(bins)}) should match the size of the supplied color palette ({len(palette)}) - 1"
-	N_COLORS = len(palette) 
-	rgb_palette = hex2rgb(palette)
-	ind, rel = digitize_modulo(data, bins)
-	ind = np.clip(ind, 0, N_COLORS-1)
-	succ_values = rgb_palette[np.where(ind < (N_COLORS-1), ind+1, ind)]
-	x_unit = rgb_palette[ind] + rel[:,np.newaxis] * (succ_values - rgb_palette[ind])
-	x_rgba = np.clip(np.round(x_unit * 255).astype(np.uint8), 0, 255)
-	print(f"n unique: {len(np.unique(x_rgba, axis=0))}")
-	return rgb2hex(x_rgba)
-
-## Assumes the data have been clipped
-def _transform_bin(data: np.ndarray, palette: Sequence, bins: Sequence):
-	"""Bins a given numeric data array onto a given palette in RGB(A) space using the supplied bins"""
-	bins = np.linspace(np.min(data), np.max(data), len(palette)-1) if bins is None else bins
-	assert len(bins) == (len(palette) - 1), f"The number of bins ({len(bins)}) should match the size of the supplied color palette ({len(palette)}) - 1"
-	ind = np.digitize(data, bins=bins)
-	return np.array(palette)[ind]
-
-def _lerp_palette(palette: Sequence, size: int) -> Sequence:
-	"""Given a color palette (hex strings), this function linearly interpolates the palette to a given size via linear interpolation in RGB space"""
-	assert is_hex_seq(palette), "Expects the color palette to be an array of hexadecimal strings"
-	N_COLORS = len(palette) 
-	rgb_palette = hex2rgb(palette) / 255
-	key_points = np.linspace(0.0, 1.0, size)
-	pal_points = np.linspace(0.0, 1.0, N_COLORS)
-	ind, rel = digitize_modulo(key_points, pal_points)
-	ind = np.clip(ind-1, 0, N_COLORS-1)
-	succ_values = rgb_palette[np.where(ind < (N_COLORS-1), ind+1, ind)]
-	x_unit = rgb_palette[ind] + rel[:,np.newaxis] * (succ_values - rgb_palette[ind])
-	x_rgba = np.clip(np.round(x_unit * 255).astype(np.uint8), 0, 255)
-	return rgb2hex(x_rgba)
 
 # https://docs.bokeh.org/en/3.0.0/docs/examples/basic/data/color_mappers.html
 def map2hex(
-	data: Iterable = None, 
-	palette: Union[Sequence, str] = 'viridis', 
-	low: Optional = None, 
-	high: Optional = None,
-	nbins: int = 256,
+	data: Iterable,
+	palette: Union[Sequence, str] = "viridis",
+	low: Optional[float] = None,
+	high: Optional[float] = None,
 	interp: str = "bin",
-	**kwargs
+	**kwargs,
 ):
-	"""Maps numeric values to colors from a given color palette or color range.
-	
-	Parameters: 
-		data = numeric values to map to colors.
-		palette = color palette name or a sequence of (hex) RGB colors.
-		low = lower bound to clip data values below.
-		high = upper bound to clip data values above.
-		nbins = number of distinct colors to partition the given palette into. 
-		interp = interpolation strategy; either 'bin' or 'lerp' (see details).
+	"""Maps numeric values to colors in a given color palette at a given color range.
 
-	Returns: 
+	Given a sequence of numeric values `data` and a chosen color palette, this function returns the image of the map that
+	sends values in the range [`low`, `high`] to coordinates in the supplied color palette. In other words, this function
+	first creates a map f : [`low`,`high`] -> `palette`, and then returns the values `f(data)`, clipping when necessary.
+
+	Parameters:
+		data: numeric values to map to colors.
+		palette: color palette name or a sequence of (hex) RGB colors.
+		low: lower bound to clip data values below.
+		high: upper bound to clip data values above.
+		interp: interpolation strategy; either 'bin' or 'lerp' (see details).
+
+	Returns:
 		ndarray of colors, given as hexadecimal strings
 
-	The interpolation strategy determines how the RGB(a) space is interpolated. 
+	The interpolation strategy determines how the RGB(a) space is interpolated.
 	"""
-	## Clip, digitize (bin), and perform the index mapping
-	if isinstance(palette, str):
-		BP = BokehColorPalette()
-		palette = np.array(BP.lookup(palette))
-	else: 
-		assert isinstance(palette, Sequence) or isinstance(palette, np.ndarray), "Invalid color palette given; must be a sequence or array of colors."
-		palette = color2hex(palette)
-	
-	## Linearly interpolate/extend the palette to the given bin size
-	palette = _lerp_palette(palette, size = nbins)
-
-	## Applying clipping bounds, compute bins, and do the mapping
-	lb = np.min(data) if low is None else low
-	ub = np.max(data) if high is None else high
-	data = np.clip(data, a_min=lb, a_max=ub)
-	
-	## Apply the given interpolation strategy
-	if interp == "bin":
-		print('bin')
-		bin_centers = np.linspace(lb,ub,nbins+1,endpoint=True)[1:-1]
-		colors = _transform_bin(data, palette=palette, bins=bin_centers)
-	elif interp == "lerp":
-		print('bin')
-		bin_centers = np.linspace(lb,ub,nbins+1,endpoint=True)[1:-1]
-		colors = _transform_lerp(data, palette=palette, bins=bin_centers)
-	else: 
-		raise ValueError(f"Invalid interpolation strategy supplied '{str(interp)}'; should be one of 'bin' or 'lerp'.")
-
+	pal = ColorPalette(palette)
+	colors = pal.bin(np.asarray(data), nbins=10) if interp == "bin" else pal.interp(x)
 	return colors
-	
+
+
 def map2rgb(
-	data: Iterable = None, 
-	palette: Union[Sequence, str] = 'viridis', 
-	low: Optional = None, 
+	data: Iterable,
+	palette: Union[Sequence, str] = "viridis",
+	low: Optional = None,
 	high: Optional = None,
 	nbins: int = 256,
 	interp: str = "bin",
-	**kwargs
+	**kwargs,
 ):
 	"""Maps numeric values to colors from a given color palette or color range.
-	
-	Parameters: 
-		data = numeric values to map to colors.
-		palette = color palette name or a sequence of (hex) RGB colors.
-		low = lower bound to clip data values below.
-		high = upper bound to clip data values above.
-		nbins = number of distinct colors to partition the given palette into. 
-		interp = interpolation strategy; either 'bin' or 'lerp' (see details).
 
-	Returns: 
-		ndarray of colors, given as rgb(a) values 
+	Parameters:
+		data: numeric values to map to colors.
+		palette: color palette name or a sequence of (hex) RGB colors.
+		low: lower bound to clip data values below.
+		high: upper bound to clip data values above.
+		nbins: number of distinct colors to partition the given palette into.
+		interp: interpolation strategy; either 'bin' or 'lerp' (see details).
+
+	Returns:
+		ndarray of colors, given as rgb(a) values
+
+	See Also:
+		- `rgb2hex`
+		- `ColorPalette`
 	"""
 	colors_hex = map2hex(data, palette, low, high, nbins, interp, **kwargs)
 	return hex2rgb(colors_hex)
