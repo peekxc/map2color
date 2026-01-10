@@ -9,9 +9,9 @@ Where relevant, all colorimetric coordinates use the D65 white point with a stan
 """
 
 from enum import Enum
-from coloraide.types import Array
 import numpy as np
 from numpy.typing import ArrayLike
+from gloe import transformer
 
 
 class ColorSpace(str, Enum):
@@ -39,7 +39,7 @@ def _rgb256_to_rgb64(rgb: ArrayLike) -> np.ndarray[np.float64]:
 		return rgb.astype(np.float64)
 
 
-def rgb2xyz(rgb: ArrayLike):
+def rgb2xyz(rgb: ArrayLike) -> np.ndarray:
 	"""Standard sRGB to CIE XYZ conversion using D65 / 2° illuminant."""
 	rgb = _rgb256_to_rgb64(rgb)
 	rgb = np.where(rgb > 0.04045, ((rgb + 0.055) / 1.055) ** 2.4, rgb / 12.92)
@@ -62,7 +62,7 @@ def rgb2xyz(rgb: ArrayLike):
 # 	return rgb
 
 
-def xyz2lab(xyz: ArrayLike):
+def xyz2lab(xyz: ArrayLike) -> np.ndarray:
 	xyz = np.atleast_2d(xyz) / D65_WHITE
 	f = np.where(xyz > EPSILON, np.cbrt(xyz), (KAPPA * xyz + 16) / 116)
 	fx, fy, fz = f[..., 0], f[..., 1], f[..., 2]
@@ -79,7 +79,8 @@ def xyz2lab(xyz: ArrayLike):
 # 	return np.column_stack([L, a, b])
 
 
-def lab2xyz(lab):
+def lab2xyz(lab: ArrayLike) -> np.ndarray:
+	lab = np.atleast_2d(lab)
 	L, a, b = lab[:, 0], lab[:, 1], lab[:, 2]
 	fy = (L + 16) / 116
 	fx = a / 500 + fy
@@ -90,7 +91,7 @@ def lab2xyz(lab):
 	return xyz_norm * np.array([Xn, Yn, Zn])
 
 
-def rgb2lab(rgb: ArrayLike):
+def rgb2lab(rgb: ArrayLike) -> np.ndarray:
 	"""Convert sRGB float coordinates to CIE Lab with D65 white point and 2° observer.
 
 	Parameters:
@@ -153,7 +154,8 @@ def rgb2hsv(rgb):
 	return np.column_stack([H, S, V])
 
 
-def hsv2rgb(hsv):
+def hsv2rgb(hsv: ArrayLike) -> np.ndarray:
+	"""Converts HSV colors to RGB."""
 	H, S, V = hsv[:, 0], hsv[:, 1], hsv[:, 2]
 
 	C = V * S
@@ -182,6 +184,9 @@ def hsv2rgb(hsv):
 
 	rgb = rgb + m.reshape(-1, 1)
 	return (rgb * 255).astype(np.uint8)
+
+
+from gloe import transformer
 
 
 # def convert_colorspace(colors: ArrayLike, src: ColorSpace = "rgb", target: ColorSpace = "lab") -> np.ndarray:

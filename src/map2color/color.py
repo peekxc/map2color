@@ -2,6 +2,7 @@ import re
 from difflib import get_close_matches
 from typing import Callable, Container, Iterable, Iterator, Optional, Sequence, Union
 from functools import singledispatch
+from pathlib import Path
 
 import numpy as np
 from coloraide import Color, color
@@ -9,15 +10,21 @@ from coloraide import Color, color
 # from .color_constants import COLORS
 from numpy.typing import ArrayLike
 
-from bokeh.palettes import all_palettes
+# from bokeh.palettes import all_palettes
+# ALL_PALETTES = {k.lower(): v for k, v in all_palettes.items()}
 
-ALL_PALETTES = {k.lower(): v for k, v in all_palettes.items()}
+PKG_SRC = Path(__file__).parent
+
+ALL_PALETTES = np.load(PKG_SRC / "all_palettes_dict.npz", allow_pickle=True)["palettes"]
+ALL_PALETTES = dict(ALL_PALETTES.tolist())
+
 HEX_DIGITS = np.array(["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "A", "B", "C", "D", "E", "F"], dtype="<U1")
 
 
 # background: linear-gradient(90deg, #3f87a6, #ebf8e1, #f69d3c);
 def colors_html_box(colors: Iterable[str], interpolate: bool = False) -> str:
 	"""Generates an HTML box for a sequence of colors using CSS."""
+	colors = list(colors)
 
 	def _gen_box(width: int, height: int, background: str) -> str:
 		return f"""<div style="
@@ -26,8 +33,8 @@ def colors_html_box(colors: Iterable[str], interpolate: bool = False) -> str:
 				background: {background};
 				border: 1px solid #ccc;
 				margin: 0;">
-		</div>
-	"""
+			</div>
+		"""
 
 	if interpolate:
 		background = f"linear-gradient(90deg, {','.join(colors)})"
