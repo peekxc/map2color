@@ -1,0 +1,44 @@
+site_name: map2color
+site_url: https://mydomain.org/map2color
+
+theme:
+  name: material
+  features:
+    - navigation.instant
+    - navigation.tracking # anchor tracking 
+    # - navigation.sections # should be a small site
+    # - navigation.expand
+    # - navigation.indexes
+    - navigation.top
+    - toc.follow
+    - toc.integrate
+    - content.tooltips
+    - content.action.edit
+    - content.action.view
+    - content.code.annotate
+    - content.code.copy
+
+nav: 
+  - index.md
+  - colorspaces.md
+  - API Reference: $api/map2color.***
+  # - Test quarto: quarto.qmd
+  # - Notebook page: notebook.ipynb
+  # - Jupytext: jupytext.py
+  # - Quarto: quarto.md
+
+plugins:
+  - search
+  - mkapi
+  # - mkdocs-jupyter
+  # - mkquartodocs:
+  #   keep_output: false
+
+
+markdown_extensions:
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.superfences
+
+extra_css:
+  - styles.css

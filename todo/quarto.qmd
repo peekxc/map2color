@@ -1,0 +1,21 @@
+---
+title: "My Project"
+format: gfm
+execute:
+  freeze: auto
+  cache: true
+---
+
+```{python}
+print(1+2)
+```
+
+```{python}
+from bokeh.plotting import figure, show
+from bokeh.io import output_notebook
+output_notebook()
+
+p = figure(width=200, height=200)
+p.scatter(x=list(range(10)), y=list(range(10)))
+p
+```
