@@ -1,13 +1,13 @@
 site_name: map2color
-site_url: https://mydomain.org/mysite
+site_url: https://mydomain.org/map2color
 
 theme:
   name: material
   features:
     - navigation.instant
     - navigation.tracking # anchor tracking 
-    - navigation.sections # should be a small site
-    - navigation.expand
+    # - navigation.sections # should be a small site
+    # - navigation.expand
     # - navigation.indexes
     - navigation.top
     - toc.follow
@@ -20,6 +20,7 @@ theme:
 
 nav: 
   - index.md
+  - colorspaces.md
   - API Reference: $api/map2color.***
   # - Test quarto: quarto.qmd
   # - Notebook page: notebook.ipynb

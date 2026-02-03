@@ -1,6 +1,6 @@
 [build-system]
-requires = ["setuptools"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
 [project]
 name = "map2color"
@@ -15,10 +15,23 @@ classifiers = [
 authors = [
 	{ name = "Matt Piekenbrock", email = "matt.piekenbrock@gmail.com" }
 ]
-requires-python = ">=3.8"
-dependencies = [
-  "numpy", 
-	"bokeh", 
-	"coloraide"
-]
+requires-python = ">=3.9"
 license = {file = "LICENSE"}
+dependencies = [
+    "coloraide>=6.2.1",
+    "gloe>=0.7.0",
+    "numpy>=2.0.2",
+]
+
+[dependency-groups]
+dev = ["jupyter"]
+docs = [
+    "mkapi>=1.0.14",
+    "mkdocs-material>=9.7.1",
+]
+plot = [
+    "bokeh>=3.4.3",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/map2color"]

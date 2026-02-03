@@ -1,4 +1,3 @@
-from coloraide.types import Array
 import numpy as np
 from numpy.typing import ArrayLike
 
@@ -20,17 +19,17 @@ def _combs(n: int, k: int) -> np.ndarray:
 
 
 def pdist_euclidean(X: ArrayLike):
-	"""Pairwise euclidean distances for colors in X (condensed form)"""
+	"""Pairwise euclidean distances for points in `X`."""
 	X = np.atleast_2d(X).astype(np.float64)
 	n = len(X)
 	D = np.sqrt(np.sum((X[:, np.newaxis, :] - X[np.newaxis, :, :]) ** 2, axis=-1))
 	return D[np.triu_indices(n, k=1)]
 
 
-def cdist_euclidean(XA, XB):
-	"""Cross euclidean distances between colors in XA and XB"""
-	XA = XA.astype(np.float64)
-	XB = XB.astype(np.float64)
+def cdist_euclidean(XA: ArrayLike, XB: ArrayLike):
+	"""Cross euclidean distances between colors in XA and XB."""
+	XA = np.atleast_2d(XA).astype(np.float64)
+	XB = np.atleast_2d(XB).astype(np.float64)
 	diff = XA[:, np.newaxis, :] - XB[np.newaxis, :, :]
 	return np.sqrt(np.sum(diff**2, axis=2))
 

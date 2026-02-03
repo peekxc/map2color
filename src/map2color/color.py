@@ -1,47 +1,44 @@
-import re
 from difflib import get_close_matches
-from typing import Callable, Container, Iterable, Iterator, Optional, Sequence, Union
 from functools import singledispatch
 from pathlib import Path
+from typing import Callable, Container, Iterable, Iterator, Optional, Sequence, Union
 
 import numpy as np
 from coloraide import Color, color
-
-# from .color_constants import COLORS
 from numpy.typing import ArrayLike
 
 # from bokeh.palettes import all_palettes
 # ALL_PALETTES = {k.lower(): v for k, v in all_palettes.items()}
 
 PKG_SRC = Path(__file__).parent
-
 ALL_PALETTES = np.load(PKG_SRC / "all_palettes_dict.npz", allow_pickle=True)["palettes"]
-ALL_PALETTES = dict(ALL_PALETTES.tolist())
-
+ALL_PALETTES: dict[str, tuple] = dict(ALL_PALETTES.tolist())
 HEX_DIGITS = np.array(["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "A", "B", "C", "D", "E", "F"], dtype="<U1")
+
+
+# https://developer.mozilla.org/en-US/docs/Glossary/Color_space
+def color_box(width: int, height: int, color_css: str) -> str:
+	"""Generates an html color box."""
+	return f"""<div style="
+				width: {width}px;
+				height: {height}px;
+				background: {color_css};
+				border: 1px solid #ccc;
+				margin: 0;">
+			</div>
+		"""
 
 
 # background: linear-gradient(90deg, #3f87a6, #ebf8e1, #f69d3c);
 def colors_html_box(colors: Iterable[str], interpolate: bool = False) -> str:
 	"""Generates an HTML box for a sequence of colors using CSS."""
 	colors = list(colors)
-
-	def _gen_box(width: int, height: int, background: str) -> str:
-		return f"""<div style="
-				width: {width}px;
-				height: {height}px;
-				background: {background};
-				border: 1px solid #ccc;
-				margin: 0;">
-			</div>
-		"""
-
 	if interpolate:
 		background = f"linear-gradient(90deg, {','.join(colors)})"
-		return _gen_box(512, 50, background)
+		return color_box(512, 50, background)
 	else:
 		box_width = 512 // (len(colors) + 5)
-		boxes = "".join([_gen_box(box_width, 50, color) for color in colors])
+		boxes = "".join([color_box(box_width, 50, color) for color in colors])
 		return f"""<div style="display: flex; flex-direction: row; gap: 5px;">{boxes}</div>"""
 
 
@@ -60,13 +57,17 @@ class ColorPalette:
 		color_pal = name.lower()
 		if color_pal in ALL_PALETTES:
 			base_palette = ALL_PALETTES[color_pal]
-			pal_sz = list(base_palette.keys())[-1]
+			# pal_sz = len(base_palette)
 		else:
-			matches = re.search(r"([a-zA-Z]+)(\d*)", color_pal)
-			basename, pal_sz = matches.group(1), matches.group(2)
-			assert basename in ALL_PALETTES, f"Unable to find color palette '{basename}'"
-			base_palette = ALL_PALETTES[basename]
-		return base_palette[pal_sz] if pal_sz in base_palette else base_palette[list(base_palette.keys())[-1]]
+			guesses = get_close_matches(color_pal, ALL_PALETTES.keys(), n=1)
+			if len(guesses) == 0:
+				pass
+			# matches = re.search(r"([a-zA-Z]+)_(\d*)", color_pal)
+			# basename, pal_sz = matches.group(1), matches.group(2)
+			# assert basename in ALL_PALETTES, f"Unable to find color palette '{basename}'"
+			# base_palette = ALL_PALETTES[basename]
+			return base_palette
+		# return base_palette[pal_sz] if pal_sz in base_palette else base_palette[list(base_palette.keys())[-1]]
 
 	def bin(self, x: ArrayLike, low: float | None = None, high: float | None = None, nbins: int | None = None):
 		"""Bins data values into colors via a uniform partitioning of the color palette."""

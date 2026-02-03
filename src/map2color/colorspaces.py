@@ -7,19 +7,34 @@
 
 Where relevant, all colorimetric coordinates use the D65 white point with a standard 2° observer.
 """
+# Oklab ≈ Oklch > CIELAB > CIELUV > CIEXYZ > sRGB > linear RGB > HSV ≈ HSL > YCbCr ≈ ICtCp > Adobe RGB > CMYK > Munsell ≈ NCS > IPT > Hunter Lab > YIQ.
+
+import pythonmonkey as pm
+
+pm.eval("'hello'")
 
 from enum import Enum
+
 import numpy as np
-from numpy.typing import ArrayLike
 from gloe import transformer
+from numpy.typing import ArrayLike
 
 
+# https://developer.mozilla.org/en-US/docs/Glossary/Color_space#srgb
+# Color spaces are named organizations of colors for underlying color models of coordinate-based color arrangements.
+# Color spaces are either rectangular or polar;
+# - Polar: hsl(), hwb(), or lch()
+# - Rect: rgb,
 class ColorSpace(str, Enum):
-	RGB = "rgb"
-	XYZ = "xyz"
-	LAB = "lab"
-	HSV = "hsv"
+	RGB = "rgb"  # sRGB
+	HSL = "hsl"  # [[0,360], [0,100], [0,100]] : hue, saturation, lightness;
+	HSW = "hbw"  # equiv. to HSV and HSB
+	XYZ = "xyz"  # CIEXYZ
+	LAB = "lab"  # [[0,100], [-125,125], [-125,125]] : CIELAB, also referred to as L*a*b* or Lab*, Lightness + <red|green> mixing + <blue|yellow> mixing
+	LCH = "lch"  # [[0,100], [0,\infty (230)], [0,2pi]] : lightness, chroma, hue
+	LUV = "luv"  # CIELUV
 	OKLAB = "oklab"
+	OKLCH = "oklch"
 
 
 D65_WHITE = np.array([0.95047, 1.00000, 1.08883])
@@ -39,8 +54,19 @@ def _rgb256_to_rgb64(rgb: ArrayLike) -> np.ndarray[np.float64]:
 		return rgb.astype(np.float64)
 
 
+# The CIE X, Y, and Z parameters correspond to levels of stimuli of the three kinds of cone cells which, in principle, describe every visible color.
+# https://developer.mozilla.org/en-US/docs/Glossary/Color_space#xyz_color_spaces
 def rgb2xyz(rgb: ArrayLike) -> np.ndarray:
-	"""Standard sRGB to CIE XYZ conversion using D65 / 2° illuminant."""
+	"""Converts sRGB to CIE XYZ coordinates.
+
+	Uses D65 / 2° illuminant.
+
+	Args:
+		rgb: Standard RGB values, given as a 2D array.
+
+	Returns:
+		Translated coordinates in the CIE 1931 XYZ coordinate system.
+	"""
 	rgb = _rgb256_to_rgb64(rgb)
 	rgb = np.where(rgb > 0.04045, ((rgb + 0.055) / 1.055) ** 2.4, rgb / 12.92)
 	M = np.array(
@@ -186,7 +212,21 @@ def hsv2rgb(hsv: ArrayLike) -> np.ndarray:
 	return (rgb * 255).astype(np.uint8)
 
 
-from gloe import transformer
+def xyz_to_oklab(xyz):
+	# fmt: off
+	M1 = np.array([[ 0.8189330, 0.3618667,-0.1288597],
+                   [ 0.0329845, 0.9293119, 0.0361456],
+                   [ 0.0482003, 0.2643663, 0.6338517]])
+	M2 = np.array([[ 0.2104543, 0.7936178,-0.0040720],
+                   [ 1.9779985,-2.4285922, 0.4505937],
+                   [ 0.0259040, 0.7827718,-0.8086758]])
+	# fmt: on
+	lms = xyz @ M1.T
+	lms = np.cbrt(lms)
+	return lms @ M2.T
+
+
+# from gloe import transformer
 
 
 # def convert_colorspace(colors: ArrayLike, src: ColorSpace = "rgb", target: ColorSpace = "lab") -> np.ndarray:

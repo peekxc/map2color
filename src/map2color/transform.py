@@ -2,13 +2,15 @@ import argparse
 import shlex
 from difflib import get_close_matches
 from functools import partial, reduce
-from typing import Callable, ClassVar, List, Optional, Tuple, Union
+from typing import Callable, ClassVar, Optional, Sequence, Literal
 
 import numpy as np
+from gloe import transformer, partial_transformer, Transformer
 from numpy.typing import ArrayLike
 
 
-def minmax(x: np.ndarray, feature_range: tuple = (0, 1)):
+def minmax(x: ArrayLike, feature_range: tuple = (0, 1)):
+	x = np.atleast_1d(x)
 	_min, _max = feature_range
 	_x_min = x.min(axis=0)
 	_x_rng = x.max(axis=0) - _x_min
@@ -16,6 +18,45 @@ def minmax(x: np.ndarray, feature_range: tuple = (0, 1)):
 		return np.repeat(0.5 * (_max - _min), len(x))
 	scale = (_max - _min) / _x_rng
 	return scale * x + _min - _x_min * scale
+
+
+@partial_transformer
+def clip(x: ArrayLike, min: float = 0.0, max: float = 1.0) -> np.ndarray:
+	return np.clip(np.atleast_1d(x), a_min=min, a_max=max)
+
+
+@partial_transformer
+def affine(x: ArrayLike, scale: float = 1.0, shift: float = 0.0) -> np.ndarray:
+	return scale * np.atleast_1d(x) + shift
+
+
+@partial_transformer
+def rescale(x: ArrayLike, method: str = "linear", factor: float = 1.0) -> np.ndarray:
+	x = np.atleast_1d(x)
+	if method == "linear":
+		return x * factor
+	elif method == "log":
+		return np.log1p(x) * factor
+	elif method == "invexp":
+		return np.exp(x * factor)
+	else:
+		raise ValueError("")
+
+
+@partial_transformer
+def normalize(x: ArrayLike, method: Literal["minmax", "stddev", "norm", "robust"] = "minmax") -> np.ndarray:
+	x = np.atleast_1d(x)
+	method = method.lower()  # type: ignore
+	if method == "minmax":
+		return minmax(x)
+	elif method == "stddev":
+		return (x - x.mean()) / x.std()
+	elif method == "norm":
+		return x / np.sqrt(np.sum(x**2))
+	elif method == "robust":
+		return (x - np.median(x)) / (np.percentile(x, 75) - np.percentile(x, 25))
+	else:
+		raise ValueError(f"Invalid method {method}")
 
 
 # get_close_matches('no', ['normalize', 'affine'], n=1, cutoff=0)
@@ -157,7 +198,7 @@ class Transform:
 		xc = data.copy()
 		for i, (f_str, fp) in enumerate(self.ops):
 			xc = fp(xc)
-			data_transformed[f"x{i+1}"] = xc
+			data_transformed[f"x{i + 1}"] = xc
 
 		cds = ColumnDataSource(data=data_transformed)
 		figs = []

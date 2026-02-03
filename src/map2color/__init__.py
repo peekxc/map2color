@@ -4,3 +4,4 @@ __version__ = importlib.metadata.version("map2color")
 
 
 from .color import map2hex, map2rgb, hex2rgb, rgb2hex
+from .distance import pdist_euclidean
